@@ -1,0 +1,6 @@
+# 忽略其他不需要的文件或目录
+temp/
+node_modules/
+.gitignore
+.git/
+.DS_Store
