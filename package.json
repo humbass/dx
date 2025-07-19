@@ -1,6 +1,6 @@
 {
   "name": "dx",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "This is a file transfer tool written in Node.js and built using WebRTC.",
   "preferGlobal": true,
   "type": "module",
