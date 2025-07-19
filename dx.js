@@ -6,16 +6,16 @@
   /         /
   ///////////
 */
+import { createRequire } from 'module'
 import { WebSocket } from 'ws'
 import { program } from 'commander'
-import { createReadStream, statSync } from 'fs'
+import { createReadStream, statSync, promises } from 'fs'
 import fse from 'fs-extra'
 import { globSync } from 'glob'
 import wrtc from 'wrtc'
 import { stdin, stdout } from 'process'
 import readline from 'readline'
 import path from 'path'
-
 
 // 从 wrtc 解构出 RTCPeerConnection 和 RTCDataChannel
 const { RTCPeerConnection, RTCDataChannel } = wrtc
@@ -39,10 +39,13 @@ const CODE_REGEX = /^[a-zA-Z0-9]{6,}$/
 
 async function getVersion() {
   try {
-    const pkg = await import('./package.json', { assert: { type: 'json' } })
-    return pkg.default.version || 'unknown'
-  } catch (err) {
-    return 'unknown'
+    const require = createRequire(import.meta.url)
+    const packagePath = require.resolve('./package.json')
+    const data = await promises.readFile(packagePath, 'utf-8')
+    const pkg = JSON.parse(data)
+    return pkg.version
+  } catch (error) {
+    console.error('读取 package.json 失败:', error)
   }
 }
 
@@ -139,11 +142,11 @@ function cleanupAndExit(dataChannel, peer, ws) {
 program
   .version(await getVersion())
   .command('send')
-  .description('Send files, folders, or a string')
-  .option('-f, --file <pattern>', 'File, folder, or pattern to send (e.g., *.txt or folder/)')
-  .option('-t, --text <string>', 'Text to send')
+  .description('Send files, folders')
+  .argument('<file>', 'File, folder, or pattern to send (e.g., *.txt or folder/)') // 添加位置参数
   .option('-c, --code <code>', 'code for transfer')
-  .action(async ({ file, text, code }) => {
+  .action(async (file, options) => {
+    const { code } = options
     const validCode = getValidCode(code, true)
     const ws = new WebSocket(SIGNALING_SERVER)
     const peer = new RTCPeerConnection(rtcConfig)
