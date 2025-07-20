@@ -20,19 +20,19 @@ Using the dx send command to send files. There are several ways to specify the t
 - Using the `DX_CODE` environment variable:
 
 ```bash
-export DX_CODE=020-9255-896 && dx send --file /path/to/name
+export DX_CODE=020-9255-896 && dx send /path/to/name
 ```
 
 - Directly specifying with the `--code` parameter:
 
 ```bash
-dx send --file /path/to/name --code 020-9255-896
+dx send /path/to/name --code 020-9255-896
 ```
 
 - Not specifying a transfer code (auto-generated):
 
 ```bash
-dx send --file /path/to/name
+dx send /path/to/name
 ```
 
 - If both the `DX_CODE` environment variable and the `--code` parameter are set, the `--code` parameter will override `DX_CODE`. 

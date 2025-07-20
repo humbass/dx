@@ -20,19 +20,19 @@ npm install --global dx
 - 使用环境变量 `DX_CODE`：
 
 ```bash
-export DX_CODE=020-9255-896 && dx send --file /path/to/name
+export DX_CODE=020-9255-896 && dx send /path/to/name
 ```
 
 - 直接 --code 参数指定：
 
 ```bash
-dx send --file /path/to/name --code 020-9255-896
+dx send /path/to/name --code 020-9255-896
 ```
 
 - 不指定传输码（自动生成）：
 
 ```bash
-dx send --file /path/to/name
+dx send /path/to/name
 ```
 
 如果同时设置了 `DX_CODE` 环境变量和 `--code` 参数，`--code` 参数将覆盖 `DX_CODE`。 
