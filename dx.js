@@ -35,7 +35,6 @@ const rtcConfig = {
 }
 
 const SIGNALING_SERVER = 'wss://dx.ld160.eu.org'
-const CODE_REGEX = /^[a-zA-Z0-9]{6,}$/
 
 async function getVersion() {
   try {
@@ -44,32 +43,22 @@ async function getVersion() {
     const data = await promises.readFile(packagePath, 'utf-8')
     const pkg = JSON.parse(data)
     return pkg.version || 'unknown'
-  } catch(e) {
-    console.error('Error getting version:', e)
+  } catch (e) {
     return 'unknown'
   }
 }
 
-function print(...args) {
-  console.log('On the other terminal run:')
-  console.log(...args)
-}
-
-function generateRandomCode(length = 8) {
-  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-  let code = ''
-  for (let i = 0; i < length; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  return code
+function generateRandomCode() {
+  return Math.random().toString().substring(2, 12).replace(/(\d{3})(\d{4})(\d{3})/, '$1-$2-$3')
 }
 
 function validateCode(code) {
-  return CODE_REGEX.test(code)
+  return  /^[a-zA-Z0-9-]{6,}$/.test(code)
 }
 
 function getValidCode(providedCode, isSender = false) {
   if (providedCode) {
+    console.log(providedCode, 1)
     if (!validateCode(providedCode)) {
       console.error('Error: Code must be at least 6 characters long and contain only letters and numbers.')
       process.exit(1)
@@ -90,12 +79,9 @@ function getValidCode(providedCode, isSender = false) {
   }
 
   if (!envCode) {
-    console.error('Error: Please set DX_CODE environment variable or provide --code option.')
-    console.error('Example: export DX_CODE="abc123" && dx receive')
     process.exit(1)
   }
   if (!validateCode(envCode)) {
-    console.error('Error: DX_CODE must be at least 6 characters long and contain only letters and numbers.')
     process.exit(1)
   }
   return envCode
@@ -107,7 +93,9 @@ function showProgress(fileName, total, current, barLength = 50) {
   const bar = '█'.repeat(filled) + '-'.repeat(barLength - filled)
   readline.cursorTo(stdout, 0)
   stdout.write(`File: ${fileName} [${bar}] ${percentage}%`)
-  if (current >= total) stdout.write('\n')
+  if (total === current) {
+    setTimeout(() => process.exit(1), 50)
+  }
 }
 
 function getAllFiles(dirPath) {
@@ -131,29 +119,45 @@ function cleanupAndExit(dataChannel, peer, ws) {
   process.exit(0)
 }
 
+function sendData(dataChannel, data) {
+  if (!dataChannel || dataChannel.readyState !== 'open') {
+    return
+  }
+  dataChannel.send(JSON.stringify(data))
+}
+
 program
   .version(await getVersion())
   .command('send')
-  .description('Send files, folders, or a string')
-  .option('-f, --file <pattern>', 'File, folder, or pattern to send')
-  .option('-t, --text <string>', 'Text to send')
+  .description('Send files, folders')
+  .argument('<file>', 'File, folder, or pattern to send (e.g., *.txt or folder/)')
   .option('-c, --code <code>', 'code for transfer')
-  .action(async ({ file, text, code }) => {
+  .action(async (file, options) => {
+    if (!fse.existsSync(file)) {
+      console.error(`Error: File or directory '${file}' does not exist`)
+      process.exit(1)
+    }
+    const { code } = options
     const validCode = getValidCode(code, true)
     const ws = new WebSocket(SIGNALING_SERVER)
     const peer = new RTCPeerConnection(rtcConfig)
     const dataChannel = peer.createDataChannel('transfer', { ordered: true, maxRetransmits: 0 })
+    globalThis.dataChannel = dataChannel
 
     peer.oniceconnectionstatechange = () => {
       if (['disconnected', 'failed'].includes(peer.iceConnectionState)) {
-        console.error('ICE connection failed')
+        console.error('Peer connection failed')
         cleanupAndExit(dataChannel, peer, ws)
       }
     }
 
     ws.on('open', () => {
       ws.send(JSON.stringify({ type: 'join', code: validCode }))
-      print(`\n  dx receive${code ? ' --code ' + validCode : ''}\n`)
+      if (code || !process.env.DX_CODE) {
+        console.log(`\ndx receive --code ${validCode}\n`)
+      } else {
+        console.log(`\ndx receive\n`)
+      }
     })
 
     ws.on('message', async (message) => {
@@ -177,13 +181,20 @@ program
       if (candidate) ws.send(JSON.stringify({ type: 'ice-candidate', candidate, code: validCode }))
     }
 
+    dataChannel.onmessage = ({ data }) => {
+      try {
+        const parseed = JSON.parse(data)
+        if (parseed.type == 'exit') {
+          cleanupAndExit(dataChannel, peer, ws)
+        } else if (parseed.type === 'all-files-received') {
+          cleanupAndExit(dataChannel, peer, ws)
+        }
+      } catch {}
+    }
+
     dataChannel.onopen = async () => {
       const CHUNK_SIZE = 16 * 1024
       dataChannel.bufferedAmountLowThreshold = CHUNK_SIZE
-
-      // Debug: log when buffer low
-      dataChannel.onbufferedamountlow = () => console.debug('[DEBUG] bufferedAmount low:', dataChannel.bufferedAmount)
-
       // Gather files list
       let files = []
       if (fse.existsSync(file) && fse.statSync(file).isDirectory()) {
@@ -193,11 +204,9 @@ program
       }
       if (!files.length) return cleanupAndExit(dataChannel, peer, ws)
 
-      dataChannel.send(JSON.stringify({ type: 'file-count', count: files.length }))
-
       for (const { path: filePath, relativePath: fileName } of files) {
         const fileSize = statSync(filePath).size
-        dataChannel.send(JSON.stringify({ type: 'file', name: fileName, size: fileSize }))
+        sendData(dataChannel, { type: 'file', name: fileName, size: fileSize })
 
         // Read, queue, and send all chunks
         await new Promise((resolve, reject) => {
@@ -248,29 +257,17 @@ program
           }
         })
 
-        dataChannel.send(JSON.stringify({ type: 'file-end' }))
+        sendData(dataChannel, { type: 'file-end' })
       }
 
-      dataChannel.send(JSON.stringify({ type: 'all-files-end' }))
+      sendData(dataChannel, { type: 'all-files-end' })
+    }
 
-      // Wait for receiver confirmation
-      await new Promise((resolve) => {
-        const timeout = setTimeout(resolve, 30000)
-        dataChannel.onmessage = ({ data }) => {
-          try {
-            if (JSON.parse(data).type === 'all-files-received') {
-              clearTimeout(timeout)
-              resolve()
-            }
-          } catch {}
-        }
-      })
-
+    dataChannel.onclose = () => {
       cleanupAndExit(dataChannel, peer, ws)
     }
 
     dataChannel.onerror = (err) => {
-      console.error('Data channel error:', err)
       cleanupAndExit(dataChannel, peer, ws)
     }
   })
@@ -284,13 +281,12 @@ program
     const ws = new WebSocket(SIGNALING_SERVER)
     const peer = new RTCPeerConnection(rtcConfig)
     let writeStream = null
-    let total = 0,
-      received = 0,
-      fileCount = 0
+    let total = 0
+    let received = 0
 
     peer.oniceconnectionstatechange = () => {
       if (['disconnected', 'failed'].includes(peer.iceConnectionState)) {
-        console.error('ICE connection failed')
+        console.error('Peer connection failed')
         cleanupAndExit(null, peer, ws)
       }
     }
@@ -315,12 +311,14 @@ program
     peer.onicecandidate = ({ candidate }) => {
       if (candidate) ws.send(JSON.stringify({ type: 'ice-candidate', candidate, code: validCode }))
     }
-    peer.ondatachannel = ({ channel }) => {
-      channel.onmessage = async ({ data }) => {
+    peer.ondatachannel = ({ channel: dataChannel }) => {
+      globalThis.dataChannel = dataChannel
+      dataChannel.onmessage = async ({ data }) => {
         try {
           const parsed = JSON.parse(data)
-          if (parsed.type === 'file-count') fileCount = parsed.count
-          else if (parsed.type === 'file') {
+          if (parsed.type === 'exit') {
+            cleanupAndExit(dataChannel, peer, ws)
+          } else if (parsed.type === 'file') {
             const filePath = parsed.name
             const dir = path.dirname(filePath)
             if (dir !== '') fse.ensureDirSync(dir)
@@ -330,8 +328,8 @@ program
           } else if (parsed.type === 'file-end') {
             await new Promise((res) => writeStream.end(res))
           } else if (parsed.type === 'all-files-end') {
-            channel.send(JSON.stringify({ type: 'all-files-received' }))
-            setTimeout(() => cleanupAndExit(channel, peer, ws), 500)
+            sendData(dataChannel, { type: 'all-files-received' })
+            setTimeout(() => cleanupAndExit(dataChannel, peer, ws), 500)
           }
         } catch {
           const buf = Buffer.from(data)
@@ -349,11 +347,17 @@ program
           )
         }
       }
-      channel.onerror = (err) => {
-        console.error('Data channel error:', err)
-        cleanupAndExit(channel, peer, ws)
+      dataChannel.onerror = (err) => {
+        cleanupAndExit(dataChannel, peer, ws)
       }
     }
   })
 
 program.parse()
+
+process.on('SIGINT', () => {
+  if (globalThis.dataChannel) {
+    sendData(globalThis.dataChannel, { type: 'exit' })
+  }
+  setTimeout(() => process.exit(0), 100)
+})
