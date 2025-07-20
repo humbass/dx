@@ -93,7 +93,10 @@ function showProgress(fileName, total, current, barLength = 50) {
   readline.cursorTo(stdout, 0)
   stdout.write(`File: ${fileName} [${bar}] ${percentage}%`)
   if (total === current) {
-    setTimeout(() => process.exit(1), 50)
+    if (globalThis.clientType === 'receive') {
+      sendData(globalThis.dataChannel, { type: 'all-files-received' })
+      setTimeout(() => process.exit(1), 50)
+    }
   }
 }
 
@@ -183,7 +186,7 @@ program
     dataChannel.onmessage = ({ data }) => {
       try {
         const parseed = JSON.parse(data)
-        if (parseed.type == 'exit') {
+        if (parseed.type == 'sigint') {
           cleanupAndExit(dataChannel, peer, ws)
         } else if (parseed.type === 'all-files-received') {
           cleanupAndExit(dataChannel, peer, ws)
@@ -282,6 +285,7 @@ program
     let writeStream = null
     let total = 0
     let received = 0
+    globalThis.clientType = 'receive'
 
     peer.oniceconnectionstatechange = () => {
       if (['disconnected', 'failed'].includes(peer.iceConnectionState)) {
@@ -315,7 +319,7 @@ program
       dataChannel.onmessage = async ({ data }) => {
         try {
           const parsed = JSON.parse(data)
-          if (parsed.type === 'exit') {
+          if (parsed.type === 'sigint') {
             cleanupAndExit(dataChannel, peer, ws)
           } else if (parsed.type === 'file') {
             const filePath = parsed.name
@@ -326,9 +330,6 @@ program
             received = 0
           } else if (parsed.type === 'file-end') {
             await new Promise((res) => writeStream.end(res))
-          } else if (parsed.type === 'all-files-end') {
-            sendData(dataChannel, { type: 'all-files-received' })
-            setTimeout(() => cleanupAndExit(dataChannel, peer, ws), 500)
           }
         } catch {
           const buf = Buffer.from(data)
@@ -356,7 +357,7 @@ program.parse()
 
 process.on('SIGINT', () => {
   if (globalThis.dataChannel) {
-    sendData(globalThis.dataChannel, { type: 'exit' })
+    sendData(globalThis.dataChannel, { type: 'sigint' })
   }
   setTimeout(() => process.exit(0), 100)
 })
