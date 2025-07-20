@@ -6,15 +6,16 @@
   /         /
   ///////////
 */
-import { WebSocket } from 'ws'
 import { program } from 'commander'
-import { createReadStream, statSync } from 'fs'
+import { createRequire } from 'module'
+import { createReadStream, statSync, promises } from 'fs'
+import path from 'path'
+import readline from 'readline'
 import fse from 'fs-extra'
+import { stdout } from 'process'
 import { globSync } from 'glob'
 import wrtc from 'wrtc'
-import { stdin, stdout } from 'process'
-import readline from 'readline'
-import path from 'path'
+import { WebSocket } from 'ws'
 
 const { RTCPeerConnection } = wrtc
 
@@ -38,9 +39,13 @@ const CODE_REGEX = /^[a-zA-Z0-9]{6,}$/
 
 async function getVersion() {
   try {
-    const pkg = await import('./package.json', { assert: { type: 'json' } })
-    return pkg.default.version || 'unknown'
-  } catch {
+    const require = createRequire(import.meta.url)
+    const packagePath = require.resolve('./package.json')
+    const data = await promises.readFile(packagePath, 'utf-8')
+    const pkg = JSON.parse(data)
+    return pkg.version || 'unknown'
+  } catch(e) {
+    console.error('Error getting version:', e)
     return 'unknown'
   }
 }
