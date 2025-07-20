@@ -58,7 +58,6 @@ function validateCode(code) {
 
 function getValidCode(providedCode, isSender = false) {
   if (providedCode) {
-    console.log(providedCode, 1)
     if (!validateCode(providedCode)) {
       console.error('Error: Code must be at least 6 characters long and contain only letters and numbers.')
       process.exit(1)

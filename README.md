@@ -49,7 +49,7 @@ dx receive --code 020-9255-896
 The sender uses the `DX_CODE` method, and the receiver can use either `DX_CODE` or `--code` to receive.
 
 ```bash
-export DX_CODE="020-9255-896" && dx receive
+export DX_CODE=020-9255-896 && dx receive
 # or
 dx receive --code 020-9255-896
 ```
