@@ -1,8 +1,11 @@
 import fse from 'fs-extra'
 import path from 'path'
 import { globSync } from 'glob'
+import { createReadStream, statSync } from 'fs'
 import { RTCPeerSender } from '../utils/peer.js'
-import { generateRandomCode } from './common.js'
+import { showProgress, getAllFiles, randomCode } from '../utils/tools.js'
+
+const CHUNK_SIZE = globalThis.CHUNK_SIZE || 16 * 1024
 
 export default async function send(file, options) {
   if (!fse.existsSync(file)) {
@@ -12,9 +15,9 @@ export default async function send(file, options) {
 
   let files = []
   if (fse.existsSync(file) && fse.statSync(file).isDirectory()) {
-    files = getAllFiles(file).map(f => ({ path: f, relativePath: path.relative(path.dirname(file), f) }))
+    files = getAllFiles(file).map((f) => ({ path: f, relativePath: path.relative(path.dirname(file), f) }))
   } else {
-    files = globSync(file).map(f => ({ path: f, relativePath: path.basename(f) }))
+    files = globSync(file).map((f) => ({ path: f, relativePath: path.basename(f) }))
   }
 
   if (files.length === 0) {
@@ -22,17 +25,45 @@ export default async function send(file, options) {
     process.exit(1)
   }
 
-  const _code = options.code || process.env.DX_CODE
-  const code = _code
-  ? (/^[a-zA-Z0-9-]{6,}$/.test(_code) ? _code : (() => { 
-    console.error('Error: Code must be at least 6 characters long and contain only letters and numbers.')
-    process.exit(1)
-   })())
-  : generateRandomCode()
+  let code = options.code || process.env.DXcode
+  if (code) {
+    if (!/^[a-zA-Z0-9-]{6,}$/.test(code)) {
+      console.error('Error: Code must be at least 6 characters long and contain only letters and numbers.')
+      process.exit(1)
+    }
+  } else {
+    code = randomCode()
+  }
 
-  this.rtcPeer = new RTCPeerSender({ code, files })
+  this.rtcPeer = new RTCPeerSender({ code })
   this.rtcPeer.on('exit', () => {
     setTimeout(() => process.exit(1), 50)
   })
+  this.rtcPeer.on('channel:open', async () => {
+    for (const { path: filePath, relativePath: fileName } of files) {
+      const fileSize = statSync(filePath).size
+      this.rtcPeer.sendData({ type: 'file', name: fileName, size: fileSize })
 
+      const stream = createReadStream(filePath, { highWaterMark: CHUNK_SIZE })
+      let sentBytes = 0
+
+      for await (const chunk of stream) {
+        while (dataChannel.bufferedAmount > CHUNK_SIZE) {
+          await new Promise((resolve) => setTimeout(resolve, 20))
+        }
+        this.rtcPeer.sendChunk(chunk)
+        sentBytes += chunk.length
+        showProgress(fileName, fileSize, sentBytes)
+      }
+
+      // Wait for buffer to drain before sending file-end
+      while (dataChannel.bufferedAmount > CHUNK_SIZE) {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      }
+
+      this.rtcPeer.sendData({ type: 'file-end' })
+    }
+
+    this.rtcPeer.sendData({ type: 'all-files-end' })
+  })
 }
