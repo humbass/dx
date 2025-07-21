@@ -1,35 +1,48 @@
+/*
+████████▄       ▀████    ▐████▀
+███   ▀███        ███▌   ████▀ 
+███    ███         ███  ▐███   
+███    ███         ▀███▄███▀   
+███    ███         ████▀██▄    
+███    ███        ▐███  ▀███   
+███   ▄███       ▄███     ███▄ 
+████████▀       ████       ███▄     File Transfer Assistant
+*/
+
 import fse from 'fs-extra'
 import path from 'path'
 import { globSync } from 'glob'
 import { createReadStream, statSync } from 'fs'
 import { RTCPeerSender } from '../utils/peer.js'
-import { showProgress, getAllFiles, randomCode } from '../utils/tools.js'
+import { showProgress, getAllFiles, randomCode, exit } from '../utils/tools.js'
 
 const CHUNK_SIZE = globalThis.CHUNK_SIZE || 16 * 1024
 
 export default async function send(file, options) {
   if (!fse.existsSync(file)) {
     console.error(`Error: File or directory '${file}' does not exist`)
-    process.exit(1)
+    exit()
   }
 
   let files = []
   if (fse.existsSync(file) && fse.statSync(file).isDirectory()) {
-    files = getAllFiles(file).map((f) => ({ path: f, relativePath: path.relative(path.dirname(file), f) }))
+    files = getAllFiles(file)
+      .map((f) => ({ path: f, relativePath: path.relative(path.dirname(file), f) }))
+      .filter((f) => !/(?:^|\/)\.[^\/]+/.test(f.relativePath))
   } else {
     files = globSync(file).map((f) => ({ path: f, relativePath: path.basename(f) }))
   }
 
   if (files.length === 0) {
     console.error(`Error: No files found in '${file}'`)
-    process.exit(1)
+    exit()
   }
 
   let code = options.code || process.env.DXcode
   if (code) {
     if (!/^[a-zA-Z0-9-]{6,}$/.test(code)) {
       console.error('Error: Code must be at least 6 characters long and contain only letters and numbers.')
-      process.exit(1)
+      exit()
     }
   } else {
     code = randomCode()
@@ -37,7 +50,7 @@ export default async function send(file, options) {
 
   this.rtcPeer = new RTCPeerSender({ code })
   this.rtcPeer.on('exit', () => {
-    setTimeout(() => process.exit(1), 50)
+    setTimeout(() => exit(), 50)
   })
   this.rtcPeer.on('channel:open', async () => {
     for (const { path: filePath, relativePath: fileName } of files) {
@@ -53,7 +66,7 @@ export default async function send(file, options) {
         }
         this.rtcPeer.sendChunk(chunk)
         sentBytes += chunk.length
-        showProgress(fileName, fileSize, sentBytes)
+        showProgress(fileSize, sentBytes)
       }
 
       // Wait for buffer to drain before sending file-end

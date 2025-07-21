@@ -1,7 +1,17 @@
+/*
+████████▄       ▀████    ▐████▀
+███   ▀███        ███▌   ████▀ 
+███    ███         ███  ▐███   
+███    ███         ▀███▄███▀   
+███    ███         ████▀██▄    
+███    ███        ▐███  ▀███   
+███   ▄███       ▄███     ███▄ 
+████████▀       ████       ███▄     File Transfer Assistant
+*/
+
 import { EventEmitter } from 'events'
-import path from 'path'
-import fse from 'fs-extra'
-import wrtc from 'wrtc'
+// import wrtc from 'wrtc'
+import * as wrtc from 'werift'
 import Terminal from './terminal.js'
 
 export class RTCPeerSender extends EventEmitter {
@@ -40,11 +50,11 @@ export class RTCPeerSender extends EventEmitter {
   startPeer() {
     this.peer = new wrtc.RTCPeerConnection(globalThis.ICE_SERVER_CFG)
     this.peer.oniceconnectionstatechange = () => {
-      if (['disconnected', 'failed'].includes(this.peer.iceConnectionState)) {
-        console.error('Peer connection failed')
-        this.emit('peer:failed')
-        this.clear()
-      }
+      // if (['disconnected', 'failed'].includes(this.peer.iceConnectionState)) {
+      //   console.error('Peer connection failed')
+      //   this.emit('peer:failed')
+      //   this.clear()
+      // }
     }
     this.peer.onicecandidate = ({ candidate }) => {
       if (candidate) this.terminal.candidate(candidate)
@@ -149,7 +159,7 @@ export class RTCPeerReceiver extends EventEmitter {
     this.peer.ondatachannel = ({ channel: dataChannel }) => {
       const CHUNK_SIZE = globalThis.CHUNK_SIZE || 16 * 1024
       dataChannel.bufferedAmountLowThreshold = CHUNK_SIZE
-      dataChannel.onmessage = async ({ data }) => {
+      dataChannel.onmessage = ({ data }) => {
         this.emit('channel:message', data)
       }
 

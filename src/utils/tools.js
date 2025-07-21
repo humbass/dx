@@ -1,14 +1,25 @@
+/*
+████████▄       ▀████    ▐████▀
+███   ▀███        ███▌   ████▀ 
+███    ███         ███  ▐███   
+███    ███         ▀███▄███▀   
+███    ███         ████▀██▄    
+███    ███        ▐███  ▀███   
+███   ▄███       ▄███     ███▄ 
+████████▀       ████       ███▄     File Transfer Assistant
+*/
+
 import process from 'process'
 import readline from 'readline'
 import fse from 'fs-extra'
 import path from 'path'
 
-export function showProgress(fileName, total, current, barLength = 50) {
+export function showProgress(total, current, barLength = 50) {
   const percentage = Math.min((current / total) * 100, 100).toFixed(2)
   const filled = Math.round((current / total) * barLength)
   const bar = '█'.repeat(filled) + '-'.repeat(barLength - filled)
   readline.cursorTo(process.stdout, 0)
-  process.stdout.write(`File: ${fileName} [${bar}] ${percentage}%`)
+  process.stdout.write(`[${bar}] ${percentage}%`)
 }
 
 export function getAllFiles(dirPath) {

@@ -1,3 +1,14 @@
+/*
+████████▄       ▀████    ▐████▀
+███   ▀███        ███▌   ████▀ 
+███    ███         ███  ▐███   
+███    ███         ▀███▄███▀   
+███    ███         ████▀██▄    
+███    ███        ▐███  ▀███   
+███   ▄███       ▄███     ███▄ 
+████████▀       ████       ███▄     File Transfer Assistant
+*/
+
 import { WebSocket } from 'ws'
 import { EventEmitter } from 'events'
 

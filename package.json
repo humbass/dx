@@ -4,9 +4,9 @@
   "description": "This is a file transfer tool written in Node.js and built using WebRTC.",
   "preferGlobal": true,
   "type": "module",
-  "main": "src/dx.js",
+  "main": "dist/dx.js",
   "bin": {
-    "dx": "src/dx.js"
+    "dx": "dist/dx.js"
   },
   "scripts": {
     "preinstall": "node src/install.js"
@@ -31,22 +31,20 @@
     "type": "git",
     "url": "git+https://github.com/humbass/dx.git"
   },
+  "files": [
+    "dist"
+  ],
   "dependencies": {
     "commander": "^14.0.0",
     "fs-extra": "^11.3.0",
     "glob": "^11.0.3",
-    "ora": "^8.2.0",
     "readline": "^1.3.0",
-    "wrtc": "^0.4.7",
+    "werift": "^0.22.2",
     "ws": "^8.18.3"
   },
-  "files": [
-    "dx.js",
-    "install.js",
-    "README.md",
-    "README_CN.md"
-  ],
   "devDependencies": {
-    "esbuild": "^0.25.8"
+    "@rollup/plugin-commonjs": "^28.0.6",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "rollup": "^4.45.1"
   }
 }

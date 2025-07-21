@@ -1,5 +1,17 @@
 #!/usr/bin/env node
 
+/*
+████████▄       ▀████    ▐████▀
+███   ▀███        ███▌   ████▀ 
+███    ███         ███  ▐███   
+███    ███         ▀███▄███▀   
+███    ███         ████▀██▄    
+███    ███        ▐███  ▀███   
+███   ▄███       ▄███     ███▄ 
+████████▀       ████       ███▄     File Transfer Assistant
+*/
+
+
 import { program } from 'commander'
 import init from './utils/init.js'
 import version from './program/version.js'

@@ -1,3 +1,14 @@
+/*
+████████▄       ▀████    ▐████▀
+███   ▀███        ███▌   ████▀ 
+███    ███         ███  ▐███   
+███    ███         ▀███▄███▀   
+███    ███         ████▀██▄    
+███    ███        ▐███  ▀███   
+███   ▄███       ▄███     ███▄ 
+████████▀       ████       ███▄     File Transfer Assistant
+*/
+
 import fse from 'fs-extra'
 import path from 'path'
 import { RTCPeerReceiver } from '../utils/peer.js'
@@ -23,7 +34,7 @@ export default async function (options) {
   this.rtcPeer = new RTCPeerReceiver({ code })
   this.rtcPeer.on('exit', exit)
   this.rtcPeer.on('channel:message', async (data) => {
-    if (data instanceof ArrayBuffer) {
+    if (data instanceof Buffer) {
       const buf = Buffer.from(data)
       received += buf.length
       writeStream.write(buf, (err) => {
@@ -31,7 +42,7 @@ export default async function (options) {
           console.error('Error writing to file:', err)
           exit()
         } else {
-          showProgress(writeStream.path, total, received)
+          showProgress(total, received)
           if (received >= total) {
             this.rtcPeer.sendData({ type: 'all-files-received' })
           }
