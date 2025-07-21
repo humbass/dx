@@ -4,12 +4,12 @@
   "description": "This is a file transfer tool written in Node.js and built using WebRTC.",
   "preferGlobal": true,
   "type": "module",
-  "main": "dx.js",
+  "main": "src/dx.js",
   "bin": {
-    "dx": "dx.js"
+    "dx": "src/dx.js"
   },
   "scripts": {
-    "preinstall": "node install.js"
+    "preinstall": "node src/install.js"
   },
   "keywords": [
     "file transfer",
@@ -45,5 +45,8 @@
     "install.js",
     "README.md",
     "README_CN.md"
-  ]
+  ],
+  "devDependencies": {
+    "esbuild": "^0.25.8"
+  }
 }
