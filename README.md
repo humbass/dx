@@ -8,6 +8,7 @@ This is a command-line file transfer tool written in node.js.
 
 ```bash
 # node version >= 20
+# dode-pre-gyp required
 npm install --global dx
 ```
 

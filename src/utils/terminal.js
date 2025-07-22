@@ -1,27 +1,15 @@
-/*
-████████▄       ▀████    ▐████▀
-███   ▀███        ███▌   ████▀ 
-███    ███         ███  ▐███   
-███    ███         ▀███▄███▀   
-███    ███         ████▀██▄    
-███    ███        ▐███  ▀███   
-███   ▄███       ▄███     ███▄ 
-████████▀       ████       ███▄     File Transfer Assistant
-*/
-
 import { WebSocket } from 'ws'
-import { EventEmitter } from 'events'
+import eventBus from './events.js'
 
-export default class Terminal extends EventEmitter {
+export default class Terminal {
   constructor(code) {
-    super()
     this.code = code
     this.terminal = null
     this.ws = new WebSocket(globalThis.SIGNALING_SERVER)
     this.ws.on('open', this.join.bind(this))
     this.ws.on('message', this.recevice.bind(this))
-    this.ws.on('error', () => this.emit('error'))
-    this.ws.on('close', () => console.log('WebSocket closed') )
+    this.ws.on('error', () => eventBus.emit('terminal:error'))
+    this.ws.on('close', () => {})
   }
 
   #toJson(buffer) {
@@ -45,23 +33,23 @@ export default class Terminal extends EventEmitter {
     }
     switch (data.type) {
       case 'start':
-        this.emit('start')
+        eventBus.emit('terminal:start')
         break
       case 'offer':
-        this.emit('offer', data.sdp)
+        eventBus.emit('terminal:offer', data.sdp)
         break
       case 'answer':
-        this.emit('answer', data.sdp)
+        eventBus.emit('terminal:answer', data.sdp)
         break
       case 'ice-candidate':
-        this.emit('ice-candidate', data.candidate)
+        eventBus.emit('terminal:ice-candidate', data.candidate)
         break
     }
   }
 
   join() {
     this.#send({ type: 'join', code: this.code })
-    this.emit('open')
+    eventBus.emit('terminal:open')
   }
 
   offer(sdp) {

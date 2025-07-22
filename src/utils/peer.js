@@ -1,22 +1,9 @@
-/*
-████████▄       ▀████    ▐████▀
-███   ▀███        ███▌   ████▀ 
-███    ███         ███  ▐███   
-███    ███         ▀███▄███▀   
-███    ███         ████▀██▄    
-███    ███        ▐███  ▀███   
-███   ▄███       ▄███     ███▄ 
-████████▀       ████       ███▄     File Transfer Assistant
-*/
-
-import { EventEmitter } from 'events'
-// import wrtc from 'wrtc'
-import * as wrtc from 'werift'
+import wrtc from 'wrtc'
 import Terminal from './terminal.js'
+import eventBus from './events.js'
 
-export class RTCPeerSender extends EventEmitter {
+export class RTCPeerSender {
   constructor({ code }) {
-    super()
     this.code = code
     this.peer = null
     this.dataChannel = null
@@ -28,21 +15,21 @@ export class RTCPeerSender extends EventEmitter {
 
   startTerminal() {
     this.terminal = new Terminal(this.code)
-    this.terminal.on('open', () => {
+    eventBus.on('terminal:open', () => {
       console.log(`\n dx receive --code ${this.code}\n`)
     })
 
-    this.terminal.on('start', async () => {
+    eventBus.on('terminal:start', async () => {
       const offer = await this.peer.createOffer()
       await this.peer.setLocalDescription(offer)
       this.terminal.offer(offer)
     })
 
-    this.terminal.on('answer', (sdp) => {
+    eventBus.on('terminal:answer', (sdp) => {
       this.peer.setRemoteDescription(sdp)
     })
 
-    this.terminal.on('ice-candidate', (candidate) => {
+    eventBus.on('terminal:ice-candidate', (candidate) => {
       this.peer.addIceCandidate(candidate)
     })
   }
@@ -50,11 +37,11 @@ export class RTCPeerSender extends EventEmitter {
   startPeer() {
     this.peer = new wrtc.RTCPeerConnection(globalThis.ICE_SERVER_CFG)
     this.peer.oniceconnectionstatechange = () => {
-      // if (['disconnected', 'failed'].includes(this.peer.iceConnectionState)) {
-      //   console.error('Peer connection failed')
-      //   this.emit('peer:failed')
-      //   this.clear()
-      // }
+      if (['disconnected', 'failed'].includes(this.peer.iceConnectionState)) {
+        console.error('Peer connection failed')
+        eventBus.emit('peer:failed')
+        this.clear()
+      }
     }
     this.peer.onicecandidate = ({ candidate }) => {
       if (candidate) this.terminal.candidate(candidate)
@@ -69,24 +56,25 @@ export class RTCPeerSender extends EventEmitter {
       try {
         const parsed = JSON.parse(data)
         if (parsed.type == 'sigint') {
-          this.emit('exit', 'sigint')
+          eventBus.emit('peer:exit', 'sigint')
           this.clear()
         } else if (parsed.type === 'all-files-received') {
-          this.emit('exit', 'channel:all-files-received')
+          eventBus.emit('peer:exit', 'channel:all-files-received')
           this.clear()
         }
       } catch {}
     }
     this.dataChannel.onopen = async () => {
-      this.emit('channel:open')
+      this.terminal.close()
+      eventBus.emit('peer:channel:open')
     }
 
     this.dataChannel.onclose = () => {
-      this.emit('exit', 'channel:close')
+      eventBus.emit('peer:exit', 'channel:close')
     }
 
     this.dataChannel.onerror = (err) => {
-      this.emit('exit', 'channel:error')
+      eventBus.emit('peer:exit', 'channel:error')
     }
 
     globalThis.dataChannel = this.dataChannel
@@ -113,9 +101,8 @@ export class RTCPeerSender extends EventEmitter {
   }
 }
 
-export class RTCPeerReceiver extends EventEmitter {
+export class RTCPeerReceiver {
   constructor({ code }) {
-    super()
     this.code = code
     this.peer = null
     this.dataChannel = null
@@ -130,14 +117,14 @@ export class RTCPeerReceiver extends EventEmitter {
   startTerminal() {
     this.terminal = new Terminal(this.code)
 
-    this.terminal.on('offer', async (sdp) => {
+    eventBus.on('terminal:offer', async (sdp) => {
       await this.peer.setRemoteDescription(sdp)
       const ans = await this.peer.createAnswer()
       await this.peer.setLocalDescription(ans)
       this.terminal.answer(ans)
     })
 
-    this.terminal.on('ice-candidate', (candidate) => {
+    eventBus.on('terminal:ice-candidate', (candidate) => {
       this.peer.addIceCandidate(candidate)
     })
   }
@@ -146,8 +133,7 @@ export class RTCPeerReceiver extends EventEmitter {
     this.peer = new wrtc.RTCPeerConnection(globalThis.ICE_SERVER_CFG)
     this.peer.oniceconnectionstatechange = () => {
       if (['disconnected', 'failed'].includes(this.peer.iceConnectionState)) {
-        console.error('Peer connection failed')
-        this.emit('peer:failed')
+        eventBus.emit('peer:failed')
         this.clear()
       }
     }
@@ -160,11 +146,12 @@ export class RTCPeerReceiver extends EventEmitter {
       const CHUNK_SIZE = globalThis.CHUNK_SIZE || 16 * 1024
       dataChannel.bufferedAmountLowThreshold = CHUNK_SIZE
       dataChannel.onmessage = ({ data }) => {
-        this.emit('channel:message', data)
+        this.terminal.close()
+        eventBus.emit('peer:channel:message', data)
       }
 
       dataChannel.onerror = () => {
-        this.emit('exit', 'channel:error')
+        eventBus.emit('peer:exit', 'channel:error')
       }
       this.dataChannel = dataChannel
     }

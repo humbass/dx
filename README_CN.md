@@ -8,6 +8,7 @@
 
 ```bash
 # node version >= 20
+# dode-pre-gyp required
 npm install --global dx 
 ```
 

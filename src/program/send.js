@@ -1,20 +1,10 @@
-/*
-████████▄       ▀████    ▐████▀
-███   ▀███        ███▌   ████▀ 
-███    ███         ███  ▐███   
-███    ███         ▀███▄███▀   
-███    ███         ████▀██▄    
-███    ███        ▐███  ▀███   
-███   ▄███       ▄███     ███▄ 
-████████▀       ████       ███▄     File Transfer Assistant
-*/
-
 import fse from 'fs-extra'
 import path from 'path'
 import { globSync } from 'glob'
 import { createReadStream, statSync } from 'fs'
 import { RTCPeerSender } from '../utils/peer.js'
 import { showProgress, getAllFiles, randomCode, exit } from '../utils/tools.js'
+import eventBus from '../utils/events.js'
 
 const CHUNK_SIZE = globalThis.CHUNK_SIZE || 16 * 1024
 
@@ -49,10 +39,10 @@ export default async function send(file, options) {
   }
 
   this.rtcPeer = new RTCPeerSender({ code })
-  this.rtcPeer.on('exit', () => {
-    setTimeout(() => exit(), 50)
+  eventBus.on('peer:exit', () => {
+    exit(100)
   })
-  this.rtcPeer.on('channel:open', async () => {
+  eventBus.on('peer:channel:open', async () => {
     for (const { path: filePath, relativePath: fileName } of files) {
       const fileSize = statSync(filePath).size
       this.rtcPeer.sendData({ type: 'file', name: fileName, size: fileSize })
@@ -69,7 +59,6 @@ export default async function send(file, options) {
         showProgress(fileSize, sentBytes)
       }
 
-      // Wait for buffer to drain before sending file-end
       while (dataChannel.bufferedAmount > CHUNK_SIZE) {
         await new Promise((resolve) => setTimeout(resolve, 20))
       }

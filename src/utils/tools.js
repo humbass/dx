@@ -1,15 +1,3 @@
-/*
-████████▄       ▀████    ▐████▀
-███   ▀███        ███▌   ████▀ 
-███    ███         ███  ▐███   
-███    ███         ▀███▄███▀   
-███    ███         ████▀██▄    
-███    ███        ▐███  ▀███   
-███   ▄███       ▄███     ███▄ 
-████████▀       ████       ███▄     File Transfer Assistant
-*/
-
-import process from 'process'
 import readline from 'readline'
 import fse from 'fs-extra'
 import path from 'path'
@@ -43,6 +31,6 @@ export function randomCode() {
     .replace(/(\d{3})(\d{4})(\d{3})/, '$1-$2-$3')
 }
 
-export function exit() {
-  setTimeout(() => process.exit(1), 50)
+export function exit(ms = 50) {
+  setTimeout(() => process.exit(1), ms)
 }
