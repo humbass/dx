@@ -30,7 +30,6 @@ export class RTCPeerSender extends EventEmitter {
       let msg = JSON.parse(msgStr)
       switch (msg.type) {
         case 'start':
-          console.log('Room ready, starting connection as sender...')
           this.createPeerConnection()
           break
         case 'answer':
@@ -49,7 +48,6 @@ export class RTCPeerSender extends EventEmitter {
     })
 
     this.peerConnection.onStateChange(state => {
-      console.log('Connection State:', state)
       if (state === 'disconnected' || state === 'failed' || state === 'closed') {
         this.emit('peer:exit', { state })
       }
