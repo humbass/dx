@@ -2,9 +2,6 @@ import fse from 'fs-extra'
 import path from 'path'
 import { RTCPeerReceiver } from '../utils/peer.js'
 import { showProgress, randomCode, exit } from '../utils/tools.js'
-import eventBus from '../utils/events.js'
-
-const CHUNK_SIZE = globalThis.CHUNK_SIZE || 16 * 1024
 
 export default async function (options) {
   let code = options.code || process.env.DXcode
@@ -21,29 +18,27 @@ export default async function (options) {
   let total = 0
   let writeStream = null
 
-  this.rtcPeer = new RTCPeerReceiver({ code })
-  eventBus.on('peer:exit', () => {
+  this.rtcPeer = new RTCPeerReceiver(code)
+  this.rtcPeer.on('peer:exit', () => {
     exit()
   })
-  eventBus.on('peer:channel:message', async (data) => {
-    if (data instanceof ArrayBuffer) {
-      const buf = Buffer.from(data)
-      received += buf.length
-      writeStream.write(buf, (err) => {
-        if (err) {
-          console.error('Error writing to file:', err)
-          exit()
-        } else {
-          showProgress(total, received)
-          if (received >= total) {
-            this.rtcPeer.sendData({ type: 'all-files-received' })
-            process.stdout.write(`\n`)
-            exit(100)
-          }
+  this.rtcPeer.on('peer:channel:buffer', buffer => {
+    received += buffer.length
+    writeStream.write(buffer, err => {
+      if (err) {
+        console.error('Error writing to file:', err)
+        exit()
+      } else {
+        showProgress(total, received)
+        if (received >= total) {
+          this.rtcPeer.sendData({ type: 'all-files-received' })
+          process.stdout.write(`\n`)
+          exit(100)
         }
-      })
-      return
-    }
+      }
+    })
+  })
+  this.rtcPeer.on('peer:channel:message', async data => {
     try {
       const parsed = JSON.parse(data)
       if (parsed.type === 'sigint') {
@@ -52,11 +47,11 @@ export default async function (options) {
         const filePath = parsed.name
         const dir = path.dirname(filePath)
         if (dir !== '') fse.ensureDirSync(dir)
-        writeStream = fse.createWriteStream(filePath, { highWaterMark: CHUNK_SIZE })
+        writeStream = fse.createWriteStream(filePath, { highWaterMark: 16 * 1024 })
         total = parsed.size
         received = 0
       } else if (parsed.type === 'file-end') {
-        await new Promise((res) => writeStream.end(res))
+        await new Promise(res => writeStream.end(res))
       } else if (parsed.type === 'all-files-end') {
       }
     } catch (err) {

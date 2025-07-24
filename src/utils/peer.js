@@ -1,171 +1,205 @@
-import wrtc from 'wrtc'
-import Terminal from './terminal.js'
-import eventBus from './events.js'
+import nodeDataChannel from 'node-datachannel'
+import WebSocket from '../utils/websocket.js'
+import { EventEmitter } from 'events'
 
-export class RTCPeerSender {
-  constructor({ code }) {
+export class RTCPeerSender extends EventEmitter {
+  constructor(code) {
+    super()
     this.code = code
-    this.peer = null
+    this.peerConnection = null
     this.dataChannel = null
-    this.terminal = null
-    this.startPeer()
-    this.startChannel()
-    this.startTerminal()
+    this.ws = new WebSocket()
+    this.init()
   }
 
-  startTerminal() {
-    this.terminal = new Terminal(this.code)
-    eventBus.on('terminal:open', () => {
-      console.log(`\n dx receive --code ${this.code}\n`)
+  init() {
+    nodeDataChannel.initLogger('Error')
+
+    this.ws.connect()
+
+    this.ws.onOpen(() => {
+      this.ws.joinRoom(this.code)
+      this.emit('peer:join')
     })
 
-    eventBus.on('terminal:start', async () => {
-      const offer = await this.peer.createOffer()
-      await this.peer.setLocalDescription(offer)
-      this.terminal.offer(offer)
+    this.ws.onError(err => {
+      this.emit('peer:exit', { error: err })
     })
 
-    eventBus.on('terminal:answer', (sdp) => {
-      this.peer.setRemoteDescription(sdp)
-    })
-
-    eventBus.on('terminal:ice-candidate', (candidate) => {
-      this.peer.addIceCandidate(candidate)
-    })
-  }
-
-  startPeer() {
-    this.peer = new wrtc.RTCPeerConnection(globalThis.ICE_SERVER_CFG)
-    this.peer.oniceconnectionstatechange = () => {
-      if (['disconnected', 'failed'].includes(this.peer.iceConnectionState)) {
-        console.error('Peer connection failed')
-        eventBus.emit('peer:failed')
-        this.clear()
+    this.ws.onMessage(msgStr => {
+      let msg = JSON.parse(msgStr)
+      switch (msg.type) {
+        case 'start':
+          console.log('Room ready, starting connection as sender...')
+          this.createPeerConnection()
+          break
+        case 'answer':
+          this.peerConnection.setRemoteDescription(msg.description, msg.type)
+          break
+        case 'ice-candidate':
+          this.peerConnection.addRemoteCandidate(msg.candidate, msg.mid)
+          break
       }
-    }
-    this.peer.onicecandidate = ({ candidate }) => {
-      if (candidate) this.terminal.candidate(candidate)
-    }
+    })
   }
 
-  startChannel() {
-    this.dataChannel = this.peer.createDataChannel('transfer', { ordered: true, maxRetransmits: 0 })
-    const CHUNK_SIZE = globalThis.CHUNK_SIZE || 16 * 1024
-    this.dataChannel.bufferedAmountLowThreshold = CHUNK_SIZE
-    this.dataChannel.onmessage = ({ data }) => {
+  createPeerConnection() {
+    this.peerConnection = new nodeDataChannel.PeerConnection('sender', {
+      iceServers: ['stun:stun.l.google.com:19302'],
+    })
+
+    this.peerConnection.onStateChange(state => {
+      console.log('Connection State:', state)
+      if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+        this.emit('peer:exit', { state })
+      }
+    })
+
+    this.peerConnection.onLocalDescription((description, type) => {
+      this.ws.sendMessage(JSON.stringify({ type, description }))
+    })
+
+    this.peerConnection.onLocalCandidate((candidate, mid) => {
+      this.ws.sendMessage(JSON.stringify({ type: 'ice-candidate', candidate, mid }))
+    })
+
+    this.dataChannel = this.peerConnection.createDataChannel('chat')
+
+    this.dataChannel.onOpen(() => {
+      this.emit('peer:channel:open')
+    })
+
+    this.dataChannel.onMessage(msg => {
       try {
-        const parsed = JSON.parse(data)
-        if (parsed.type == 'sigint') {
-          eventBus.emit('peer:exit', 'sigint')
-          this.clear()
-        } else if (parsed.type === 'all-files-received') {
-          eventBus.emit('peer:exit', 'channel:all-files-received')
-          this.clear()
+        const parsed = JSON.parse(msg)
+        if (parsed.type === 'all-files-received') {
+          this.emit('peer:exit', { reason: 'all-files-received' })
+        } else if (parsed.type === 'sigint') {
+          this.emit('peer:exit', { reason: 'sigint' })
         }
-      } catch {}
-    }
-    this.dataChannel.onopen = async () => {
-      this.terminal.close()
-      eventBus.emit('peer:channel:open')
-    }
+      } catch (e) {}
+    })
 
-    this.dataChannel.onclose = () => {
-      eventBus.emit('peer:exit', 'channel:close')
-    }
-
-    this.dataChannel.onerror = (err) => {
-      eventBus.emit('peer:exit', 'channel:error')
-    }
-
-    globalThis.dataChannel = this.dataChannel
+    this.dataChannel.onClosed(() => {
+      this.emit('peer:exit', { reason: 'channel_closed' })
+    })
   }
 
-  sendChunk(chunk) {
-    if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
-      return false
+  sendChunk(buffer) {
+    if (this.dataChannel && Buffer.isBuffer(buffer)) {
+      this.dataChannel.sendMessageBinary(buffer)
     }
-    this.dataChannel.send(chunk)
-    return true
   }
 
   sendData(data) {
-    if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
-      return
+    if (this.dataChannel) {
+      this.dataChannel.sendMessage(JSON.stringify(data))
     }
-    this.dataChannel.send(JSON.stringify(data))
   }
 
-  clear() {
-    this.dataChannel?.close()
-    this.peer?.close()
+  close() {
+    if (this.dataChannel) {
+      this.dataChannel.close()
+    }
+    if (this.peerConnection) {
+      this.peerConnection.close()
+    }
+    if (this.ws) {
+      this.ws.close()
+    }
   }
 }
 
-export class RTCPeerReceiver {
-  constructor({ code }) {
+export class RTCPeerReceiver extends EventEmitter {
+  constructor(code) {
+    super()
     this.code = code
-    this.peer = null
+    this.peerConnection = null
     this.dataChannel = null
-    this.terminal = null
-    this.writeStream = null
-    this.total = 0
-    this.received = 0
-    this.startPeer()
-    this.startTerminal()
+    this.ws = new WebSocket()
+    this.init()
   }
 
-  startTerminal() {
-    this.terminal = new Terminal(this.code)
+  init() {
+    nodeDataChannel.initLogger('Error')
 
-    eventBus.on('terminal:offer', async (sdp) => {
-      await this.peer.setRemoteDescription(sdp)
-      const ans = await this.peer.createAnswer()
-      await this.peer.setLocalDescription(ans)
-      this.terminal.answer(ans)
+    this.ws.connect()
+
+    this.ws.onOpen(() => {
+      this.ws.joinRoom(this.code)
     })
 
-    eventBus.on('terminal:ice-candidate', (candidate) => {
-      this.peer.addIceCandidate(candidate)
+    this.ws.onError(err => {
+      this.emit('peer:exit', { error: err })
+    })
+
+    this.ws.onMessage(msgStr => {
+      let msg = JSON.parse(msgStr)
+      switch (msg.type) {
+        case 'start':
+          this.createPeerConnection()
+          break
+        case 'offer':
+          if (!this.peerConnection) {
+            this.createPeerConnection()
+          }
+          this.peerConnection.setRemoteDescription(msg.description, msg.type)
+          break
+        case 'ice-candidate':
+          this.peerConnection.addRemoteCandidate(msg.candidate, msg.mid)
+          break
+      }
     })
   }
 
-  startPeer() {
-    this.peer = new wrtc.RTCPeerConnection(globalThis.ICE_SERVER_CFG)
-    this.peer.oniceconnectionstatechange = () => {
-      if (['disconnected', 'failed'].includes(this.peer.iceConnectionState)) {
-        eventBus.emit('peer:failed')
-        this.clear()
-      }
-    }
+  createPeerConnection() {
+    this.peerConnection = new nodeDataChannel.PeerConnection('receiver', {
+      iceServers: ['stun:stun.l.google.com:19302'],
+    })
 
-    this.peer.onicecandidate = ({ candidate }) => {
-      if (candidate) this.terminal.candidate(candidate)
-    }
-
-    this.peer.ondatachannel = ({ channel: dataChannel }) => {
-      const CHUNK_SIZE = globalThis.CHUNK_SIZE || 16 * 1024
-      dataChannel.bufferedAmountLowThreshold = CHUNK_SIZE
-      dataChannel.onmessage = ({ data }) => {
-        this.terminal.close()
-        eventBus.emit('peer:channel:message', data)
+    this.peerConnection.onStateChange(state => {
+      if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+        this.emit('peer:exit', { state })
       }
+    })
 
-      dataChannel.onerror = () => {
-        eventBus.emit('peer:exit', 'channel:error')
-      }
+    this.peerConnection.onLocalDescription((description, type) => {
+      this.ws.sendMessage(JSON.stringify({ type, description }))
+    })
+
+    this.peerConnection.onLocalCandidate((candidate, mid) => {
+      this.ws.sendMessage(JSON.stringify({ type: 'ice-candidate', candidate, mid }))
+    })
+
+    this.peerConnection.onDataChannel(dataChannel => {
+      dataChannel.onOpen(() => {})
+      dataChannel.onMessage(msg => {
+        if (Buffer.isBuffer(msg)) {
+          this.emit('peer:channel:buffer', msg)
+        } else {
+          this.emit('peer:channel:message', msg)
+        }
+      })
+
+      dataChannel.onClosed(() => {
+        this.emit('peer:exit', { reason: 'channel_closed' })
+      })
       this.dataChannel = dataChannel
-    }
+    })
   }
 
   sendData(data) {
-    if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
-      return
+    if (this.dataChannel) {
+      this.dataChannel.sendMessage(JSON.stringify(data))
     }
-    this.dataChannel.send(JSON.stringify(data))
   }
 
-  clear() {
-    this.dataChannel?.close()
-    this.peer?.close()
+  close() {
+    if (this.peerConnection) {
+      this.peerConnection.close()
+    }
+    if (this.ws) {
+      this.ws.close()
+    }
   }
 }

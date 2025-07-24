@@ -1,13 +1,11 @@
 #!/usr/bin/env node
 
 import { program } from 'commander'
-import init from './utils/init.js'
 import version from './program/version.js'
 import send from './program/send.js'
 import receive from './program/receive.js'
 import sigint from './program/sigint.js'
 
-init()
 // prettier-ignore
 program
   .command('version')

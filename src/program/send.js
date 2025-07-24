@@ -4,9 +4,6 @@ import { globSync } from 'glob'
 import { createReadStream, statSync } from 'fs'
 import { RTCPeerSender } from '../utils/peer.js'
 import { showProgress, getAllFiles, randomCode, exit } from '../utils/tools.js'
-import eventBus from '../utils/events.js'
-
-const CHUNK_SIZE = globalThis.CHUNK_SIZE || 16 * 1024
 
 export default async function send(file, options) {
   if (!fse.existsSync(file)) {
@@ -17,10 +14,10 @@ export default async function send(file, options) {
   let files = []
   if (fse.existsSync(file) && fse.statSync(file).isDirectory()) {
     files = getAllFiles(file)
-      .map((f) => ({ path: f, relativePath: path.relative(path.dirname(file), f) }))
-      .filter((f) => !/(?:^|\/)\.[^\/]+/.test(f.relativePath))
+      .map(f => ({ path: f, relativePath: path.relative(path.dirname(file), f) }))
+      .filter(f => !/(?:^|\/)\.[^\/]+/.test(f.relativePath))
   } else {
-    files = globSync(file).map((f) => ({ path: f, relativePath: path.basename(f) }))
+    files = globSync(file).map(f => ({ path: f, relativePath: path.basename(f) }))
   }
 
   if (files.length === 0) {
@@ -38,29 +35,25 @@ export default async function send(file, options) {
     code = randomCode()
   }
 
-  this.rtcPeer = new RTCPeerSender({ code })
-  eventBus.on('peer:exit', () => {
+  this.rtcPeer = new RTCPeerSender(code)
+  this.rtcPeer.on('peer:join', () => {
+    console.log(`\n dx receive --code ${code}\n`)
+  })
+  this.rtcPeer.on('peer:exit', () => {
     exit(100)
   })
-  eventBus.on('peer:channel:open', async () => {
+  this.rtcPeer.on('peer:channel:open', async () => {
     for (const { path: filePath, relativePath: fileName } of files) {
       const fileSize = statSync(filePath).size
       this.rtcPeer.sendData({ type: 'file', name: fileName, size: fileSize })
 
-      const stream = createReadStream(filePath, { highWaterMark: CHUNK_SIZE })
+      const stream = createReadStream(filePath, { highWaterMark: 16 * 1024 })
       let sentBytes = 0
 
       for await (const chunk of stream) {
-        while (dataChannel.bufferedAmount > CHUNK_SIZE) {
-          await new Promise((resolve) => setTimeout(resolve, 20))
-        }
         this.rtcPeer.sendChunk(chunk)
         sentBytes += chunk.length
         showProgress(fileSize, sentBytes)
-      }
-
-      while (dataChannel.bufferedAmount > CHUNK_SIZE) {
-        await new Promise((resolve) => setTimeout(resolve, 20))
       }
 
       this.rtcPeer.sendData({ type: 'file-end' })
