@@ -6,7 +6,7 @@ function toIceServers() {
   const cfg = globalThis.ICE_SERVER_CFG || {}
   const list = Array.isArray(cfg.iceServers) ? cfg.iceServers : []
   return list
-    .map((item) => {
+    .map(item => {
       if (typeof item === 'string') return { urls: item }
       if (item && typeof item.urls === 'string') return { urls: item.urls }
       return null
@@ -46,7 +46,7 @@ export class RTCPeerSender {
   startTerminal() {
     this.terminal = new Terminal(this.code)
     eventBus.on('terminal:open', () => {
-      console.log(`\n dx receive --code ${this.code}\n`)
+      console.log(`\ndx receive --code ${this.code}\n`)
     })
 
     eventBus.on('terminal:start', async () => {
@@ -55,11 +55,11 @@ export class RTCPeerSender {
       this.terminal.offer(this.peer.localDescription)
     })
 
-    eventBus.on('terminal:answer', async (sdp) => {
+    eventBus.on('terminal:answer', async sdp => {
       await this.peer.setRemoteDescription(sdp)
     })
 
-    eventBus.on('terminal:ice-candidate', async (candidate) => {
+    eventBus.on('terminal:ice-candidate', async candidate => {
       const init = toIceCandidateInit(candidate)
       if (!init) return
       await this.peer.addIceCandidate(init)
@@ -72,7 +72,7 @@ export class RTCPeerSender {
       iceTransportPolicy: globalThis.ICE_SERVER_CFG?.iceTransportPolicy || 'all',
     })
 
-    this.peer.iceConnectionStateChange.subscribe((state) => {
+    this.peer.iceConnectionStateChange.subscribe(state => {
       if (this.isClosing) return
       if (state === 'failed') {
         console.error('Peer connection failed')
@@ -81,7 +81,7 @@ export class RTCPeerSender {
       }
     })
 
-    this.peer.onIceCandidate.subscribe((candidate) => {
+    this.peer.onIceCandidate.subscribe(candidate => {
       if (candidate) this.terminal.candidate(candidate)
     })
   }
@@ -91,7 +91,7 @@ export class RTCPeerSender {
     const CHUNK_SIZE = globalThis.CHUNK_SIZE || 16 * 1024
     this.dataChannel.bufferedAmountLowThreshold = CHUNK_SIZE
 
-    this.dataChannel.onMessage.subscribe((data) => {
+    this.dataChannel.onMessage.subscribe(data => {
       try {
         const parsed = JSON.parse(data)
         if (parsed.type == 'sigint') {
@@ -106,7 +106,7 @@ export class RTCPeerSender {
       } catch {}
     })
 
-    this.dataChannel.stateChanged.subscribe((state) => {
+    this.dataChannel.stateChanged.subscribe(state => {
       if (state === 'open') {
         this.terminal.close()
         eventBus.emit('peer:channel:open')
@@ -172,14 +172,14 @@ export class RTCPeerReceiver {
   startTerminal() {
     this.terminal = new Terminal(this.code)
 
-    eventBus.on('terminal:offer', async (sdp) => {
+    eventBus.on('terminal:offer', async sdp => {
       await this.peer.setRemoteDescription(sdp)
       const answer = await this.peer.createAnswer()
       await this.peer.setLocalDescription(answer)
       this.terminal.answer(this.peer.localDescription)
     })
 
-    eventBus.on('terminal:ice-candidate', async (candidate) => {
+    eventBus.on('terminal:ice-candidate', async candidate => {
       const init = toIceCandidateInit(candidate)
       if (!init) return
       await this.peer.addIceCandidate(init)
@@ -192,7 +192,7 @@ export class RTCPeerReceiver {
       iceTransportPolicy: globalThis.ICE_SERVER_CFG?.iceTransportPolicy || 'all',
     })
 
-    this.peer.iceConnectionStateChange.subscribe((state) => {
+    this.peer.iceConnectionStateChange.subscribe(state => {
       if (this.isClosing) return
       if (state === 'failed') {
         eventBus.emit('peer:failed')
@@ -200,15 +200,15 @@ export class RTCPeerReceiver {
       }
     })
 
-    this.peer.onIceCandidate.subscribe((candidate) => {
+    this.peer.onIceCandidate.subscribe(candidate => {
       if (candidate) this.terminal.candidate(candidate)
     })
 
-    this.peer.onDataChannel.subscribe((dataChannel) => {
+    this.peer.onDataChannel.subscribe(dataChannel => {
       const CHUNK_SIZE = globalThis.CHUNK_SIZE || 16 * 1024
       dataChannel.bufferedAmountLowThreshold = CHUNK_SIZE
 
-      dataChannel.onMessage.subscribe((data) => {
+      dataChannel.onMessage.subscribe(data => {
         this.terminal.close()
         eventBus.emit('peer:channel:message', data)
       })
@@ -217,8 +217,10 @@ export class RTCPeerReceiver {
         eventBus.emit('peer:exit', 'channel:error')
       })
 
-      dataChannel.stateChanged.subscribe((state) => {
-        if (state === 'closed') {
+      dataChannel.stateChanged.subscribe(state => {
+        if (state === 'open') {
+          eventBus.emit('peer:channel:open')
+        } else if (state === 'closed') {
           eventBus.emit('peer:exit', 'channel:close')
         }
       })

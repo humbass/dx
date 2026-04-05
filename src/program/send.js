@@ -1,5 +1,6 @@
 import fse from 'fs-extra'
 import path from 'path'
+import readline from 'readline'
 import { globSync } from 'glob'
 import { createReadStream, statSync } from 'fs'
 import { RTCPeerSender } from '../utils/peer.js'
@@ -142,6 +143,24 @@ export default async function send(file, options) {
   let currentFileId = null
   let currentFileSize = 0
   let remoteReceivedBytes = 0
+  let lastStatus = ''
+  let statusActive = false
+
+  function setStatus(message) {
+    if (!message || message === lastStatus) return
+    process.stdout.write(`\r`)
+    process.stdout.write(message)
+    readline.clearLine(process.stdout, 1)
+    lastStatus = message
+    statusActive = true
+  }
+
+  function clearStatusLine() {
+    if (!statusActive) return
+    process.stdout.write(`\r`)
+    readline.clearLine(process.stdout, 1)
+    statusActive = false
+  }
 
   eventBus.on('peer:channel:message', (message) => {
     if (!message || message.type !== 'progress') return
@@ -153,6 +172,14 @@ export default async function send(file, options) {
 
   this.rtcPeer = new RTCPeerSender({ code })
   globalThis.rtcPeer = this.rtcPeer
+  eventBus.on('terminal:start', () => {
+    if (finished) return
+    setStatus('Receiver detected, negotiating connection...')
+  })
+  eventBus.on('terminal:answer', () => {
+    if (finished) return
+    setStatus('Answer received, establishing data channel...')
+  })
   eventBus.on('terminal:error', () => {
     if (finished) return
     finished = true
@@ -179,6 +206,8 @@ export default async function send(file, options) {
     exit()
   })
   eventBus.on('peer:channel:open', async () => {
+    setStatus('Connection established, starting transfer...')
+    clearStatusLine()
     try {
       for (const { path: filePath, relativePath: fileName } of files) {
         currentFileId = `${fileName}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`

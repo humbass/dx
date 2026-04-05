@@ -1,5 +1,6 @@
 import fse from 'fs-extra'
 import path from 'path'
+import readline from 'readline'
 import { RTCPeerReceiver } from '../utils/peer.js'
 import { showProgress, randomCode, exit } from '../utils/tools.js'
 import eventBus from '../utils/events.js'
@@ -28,9 +29,40 @@ export default async function (options) {
   let currentFileId = null
   let lastProgressSentAt = 0
   let lastProgressSentBytes = 0
+  let startedReceivingData = false
+  let lastStatus = ''
+  let statusActive = false
+
+  function setStatus(message) {
+    if (!message || message === lastStatus) return
+    process.stdout.write(`\r`)
+    process.stdout.write(message)
+    readline.clearLine(process.stdout, 1)
+    lastStatus = message
+    statusActive = true
+  }
+
+  function clearStatusLine() {
+    if (!statusActive) return
+    process.stdout.write(`\r`)
+    readline.clearLine(process.stdout, 1)
+    statusActive = false
+  }
 
   this.rtcPeer = new RTCPeerReceiver({ code })
   globalThis.rtcPeer = this.rtcPeer
+  eventBus.on('terminal:open', () => {
+    if (transferEnded) return
+    setStatus('Connected to signaling server, waiting for sender...')
+  })
+  eventBus.on('terminal:offer', () => {
+    if (transferEnded) return
+    setStatus('Sender detected, negotiating connection...')
+  })
+  eventBus.on('peer:channel:open', () => {
+    if (transferEnded) return
+    setStatus('Connection established, waiting for transfer...')
+  })
   eventBus.on('terminal:error', () => {
     if (transferEnded) return
     transferEnded = true
@@ -90,6 +122,11 @@ export default async function (options) {
 
   eventBus.on('peer:channel:message', async (data) => {
     if (Buffer.isBuffer(data) || data instanceof ArrayBuffer) {
+      if (!startedReceivingData) {
+        startedReceivingData = true
+        setStatus('Starting to receive data...')
+        clearStatusLine()
+      }
       const buf = Buffer.isBuffer(data) ? data : Buffer.from(data)
       received += buf.length
       if (!writeStream) {
