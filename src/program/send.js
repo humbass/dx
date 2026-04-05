@@ -7,6 +7,25 @@ import { showProgress, getAllFiles, randomCode, exit } from '../utils/tools.js'
 import eventBus from '../utils/events.js'
 
 const CHUNK_SIZE = globalThis.CHUNK_SIZE || 16 * 1024
+const MAX_BUFFERED_AMOUNT = 4 * 1024 * 1024
+const BUFFER_POLL_INTERVAL = 10
+
+async function waitForBufferLow(dataChannel, timeoutMs = 30000) {
+  if (!dataChannel || dataChannel.readyState !== 'open') {
+    throw new Error('Data channel is not open')
+  }
+
+  const startedAt = Date.now()
+  while (dataChannel.bufferedAmount > MAX_BUFFERED_AMOUNT) {
+    if (dataChannel.readyState !== 'open') {
+      throw new Error('Data channel closed while sending')
+    }
+    if (Date.now() - startedAt >= timeoutMs) {
+      throw new Error('Timed out waiting for data channel drain')
+    }
+    await new Promise((resolve) => setTimeout(resolve, BUFFER_POLL_INTERVAL))
+  }
+}
 
 export default async function send(file, options) {
   if (!fse.existsSync(file)) {
@@ -38,34 +57,61 @@ export default async function send(file, options) {
     code = randomCode()
   }
 
+  let finished = false
+
   this.rtcPeer = new RTCPeerSender({ code })
-  eventBus.on('peer:exit', () => {
-    exit(100)
+  eventBus.on('terminal:error', () => {
+    if (finished) return
+    finished = true
+    console.error('Error: signaling server connection failed')
+    exit()
   })
-  eventBus.on('peer:channel:open', async () => {
-    for (const { path: filePath, relativePath: fileName } of files) {
-      const fileSize = statSync(filePath).size
-      this.rtcPeer.sendData({ type: 'file', name: fileName, size: fileSize })
-
-      const stream = createReadStream(filePath, { highWaterMark: CHUNK_SIZE })
-      let sentBytes = 0
-
-      for await (const chunk of stream) {
-        while (dataChannel.bufferedAmount > CHUNK_SIZE) {
-          await new Promise((resolve) => setTimeout(resolve, 20))
-        }
-        this.rtcPeer.sendChunk(chunk)
-        sentBytes += chunk.length
-        showProgress(fileSize, sentBytes)
-      }
-
-      while (dataChannel.bufferedAmount > CHUNK_SIZE) {
-        await new Promise((resolve) => setTimeout(resolve, 20))
-      }
-
-      this.rtcPeer.sendData({ type: 'file-end' })
+  eventBus.on('peer:failed', () => {
+    if (finished) return
+    finished = true
+    console.error('Error: peer connection failed')
+    exit()
+  })
+  eventBus.on('peer:exit', (reason) => {
+    if (finished) return
+    if (reason === 'channel:all-files-received') {
+      finished = true
+      exit(100)
+      return
     }
 
-    this.rtcPeer.sendData({ type: 'all-files-end' })
+    finished = true
+    console.error(`\nError: transfer interrupted (${reason || 'unknown'})`)
+    exit()
+  })
+  eventBus.on('peer:channel:open', async () => {
+    try {
+      for (const { path: filePath, relativePath: fileName } of files) {
+        const fileSize = statSync(filePath).size
+        this.rtcPeer.sendData({ type: 'file', name: fileName, size: fileSize })
+
+        const stream = createReadStream(filePath, { highWaterMark: CHUNK_SIZE })
+        let sentBytes = 0
+
+        for await (const chunk of stream) {
+          await waitForBufferLow(this.rtcPeer.dataChannel)
+          const sent = this.rtcPeer.sendChunk(chunk)
+          if (!sent) {
+            throw new Error('Data channel is closed during file transfer')
+          }
+          sentBytes += chunk.length
+          showProgress(fileSize, sentBytes)
+        }
+
+        this.rtcPeer.sendData({ type: 'file-end' })
+      }
+
+      this.rtcPeer.sendData({ type: 'all-files-end' })
+    } catch (err) {
+      if (finished) return
+      finished = true
+      console.error(`\nError: ${err.message}`)
+      exit()
+    }
   })
 }

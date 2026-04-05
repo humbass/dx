@@ -9,6 +9,7 @@
     "dx": "src/dx.js"
   },
   "scripts": {
+    "rsync": "rsync -avz ./src root@54.251.70.115:/root/dxdev",
     "preinstall": "node src/install.js"
   },
   "keywords": [

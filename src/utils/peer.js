@@ -25,11 +25,11 @@ export class RTCPeerSender {
       this.terminal.offer(offer)
     })
 
-    eventBus.on('terminal:answer', (sdp) => {
+    eventBus.on('terminal:answer', sdp => {
       this.peer.setRemoteDescription(sdp)
     })
 
-    eventBus.on('terminal:ice-candidate', (candidate) => {
+    eventBus.on('terminal:ice-candidate', candidate => {
       this.peer.addIceCandidate(candidate)
     })
   }
@@ -49,7 +49,7 @@ export class RTCPeerSender {
   }
 
   startChannel() {
-    this.dataChannel = this.peer.createDataChannel('transfer', { ordered: true, maxRetransmits: 0 })
+    this.dataChannel = this.peer.createDataChannel('transfer', { ordered: true })
     const CHUNK_SIZE = globalThis.CHUNK_SIZE || 16 * 1024
     this.dataChannel.bufferedAmountLowThreshold = CHUNK_SIZE
     this.dataChannel.onmessage = ({ data }) => {
@@ -73,7 +73,7 @@ export class RTCPeerSender {
       eventBus.emit('peer:exit', 'channel:close')
     }
 
-    this.dataChannel.onerror = (err) => {
+    this.dataChannel.onerror = err => {
       eventBus.emit('peer:exit', 'channel:error')
     }
 
@@ -117,14 +117,14 @@ export class RTCPeerReceiver {
   startTerminal() {
     this.terminal = new Terminal(this.code)
 
-    eventBus.on('terminal:offer', async (sdp) => {
+    eventBus.on('terminal:offer', async sdp => {
       await this.peer.setRemoteDescription(sdp)
       const ans = await this.peer.createAnswer()
       await this.peer.setLocalDescription(ans)
       this.terminal.answer(ans)
     })
 
-    eventBus.on('terminal:ice-candidate', (candidate) => {
+    eventBus.on('terminal:ice-candidate', candidate => {
       this.peer.addIceCandidate(candidate)
     })
   }
