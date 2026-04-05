@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { execSync } from 'child_process'
 
 function checkNodeVersion() {
   const requiredVersion = '20.0.0'
@@ -29,33 +28,4 @@ function compareVersions(current, required) {
   return true
 }
 
-// check node-pre-gyp
-function isNodePreGypInstalled() {
-  try {
-    execSync('npm list -g node-pre-gyp --depth=0', { stdio: 'ignore' })
-    return true
-  } catch (error) {
-    return false
-  }
-}
-
-// auto install node-pre-gyp
-function installNodePreGyp() {
-  console.log('node-pre-gyp is not installed globally. Attempting to install...')
-  try {
-    execSync('npm install -g node-pre-gyp', { stdio: 'inherit' })
-    console.log('node-pre-gyp installed successfully.')
-  } catch (error) {
-    console.error('Error: Failed to install node-pre-gyp globally.')
-    console.error('Please install it manually using: npm install -g node-pre-gyp')
-    console.error('You may need to run with sudo or as an administrator.')
-    process.exit()
-  }
-}
-
 checkNodeVersion()
-if (!isNodePreGypInstalled()) {
-  installNodePreGyp()
-} else {
-  console.log('node-pre-gyp is already installed globally.')
-}

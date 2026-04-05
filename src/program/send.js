@@ -11,13 +11,13 @@ const MAX_BUFFERED_AMOUNT = 4 * 1024 * 1024
 const BUFFER_POLL_INTERVAL = 10
 
 async function waitForBufferLow(dataChannel, timeoutMs = 30000) {
-  if (!dataChannel || dataChannel.readyState !== 'open') {
+  if (!dataChannel || !dataChannel.isChannelOpen()) {
     throw new Error('Data channel is not open')
   }
 
   const startedAt = Date.now()
-  while (dataChannel.bufferedAmount > MAX_BUFFERED_AMOUNT) {
-    if (dataChannel.readyState !== 'open') {
+  while (dataChannel.getBufferedAmount() > MAX_BUFFERED_AMOUNT) {
+    if (!dataChannel.isChannelOpen()) {
       throw new Error('Data channel closed while sending')
     }
     if (Date.now() - startedAt >= timeoutMs) {
@@ -76,6 +76,7 @@ export default async function send(file, options) {
     if (finished) return
     if (reason === 'channel:all-files-received') {
       finished = true
+      process.stdout.write(`\n`)
       exit(100)
       return
     }
@@ -94,7 +95,7 @@ export default async function send(file, options) {
         let sentBytes = 0
 
         for await (const chunk of stream) {
-          await waitForBufferLow(this.rtcPeer.dataChannel)
+          await waitForBufferLow(this.rtcPeer)
           const sent = this.rtcPeer.sendChunk(chunk)
           if (!sent) {
             throw new Error('Data channel is closed during file transfer')

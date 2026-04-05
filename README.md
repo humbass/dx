@@ -8,7 +8,6 @@ This is a command-line file transfer tool written in node.js.
 
 ```bash
 # node version >= 20
-# node-pre-gyp required
 npm install --global dx
 ```
 
@@ -58,5 +57,4 @@ dx receive --code 020-9255-896
 ## Notes
 
 Dx server is only used for signaling and does not relay data. Your file data is transferred directly between the two terminals.
-
 

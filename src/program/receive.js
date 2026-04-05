@@ -19,15 +19,53 @@ export default async function (options) {
 
   let received = 0
   let total = 0
+  let pendingFiles = 0
+  let remoteFinished = false
+  let transferEnded = false
   let writeStream = null
 
   this.rtcPeer = new RTCPeerReceiver({ code })
-  eventBus.on('peer:exit', () => {
+  eventBus.on('terminal:error', () => {
+    if (transferEnded) return
+    transferEnded = true
+    console.error('Error: signaling server connection failed')
     exit()
   })
+  eventBus.on('peer:failed', () => {
+    if (transferEnded) return
+    transferEnded = true
+    console.error('Error: peer connection failed')
+    exit()
+  })
+  eventBus.on('peer:exit', (reason) => {
+    if (transferEnded) return
+    if (reason === 'sigint') {
+      transferEnded = true
+      exit()
+      return
+    }
+
+    if (remoteFinished && pendingFiles === 0) {
+      return
+    }
+
+    transferEnded = true
+    console.error(`\nError: transfer interrupted (${reason || 'unknown'})`)
+    exit()
+  })
+
+  function maybeFinishTransfer() {
+    if (transferEnded) return
+    if (!remoteFinished || pendingFiles !== 0) return
+    transferEnded = true
+    this.rtcPeer.sendData({ type: 'all-files-received' })
+    process.stdout.write(`\n`)
+    exit(100)
+  }
+
   eventBus.on('peer:channel:message', async (data) => {
-    if (data instanceof ArrayBuffer) {
-      const buf = Buffer.from(data)
+    if (Buffer.isBuffer(data) || data instanceof ArrayBuffer) {
+      const buf = Buffer.isBuffer(data) ? data : Buffer.from(data)
       received += buf.length
       writeStream.write(buf, (err) => {
         if (err) {
@@ -35,11 +73,6 @@ export default async function (options) {
           exit()
         } else {
           showProgress(total, received)
-          if (received >= total) {
-            this.rtcPeer.sendData({ type: 'all-files-received' })
-            process.stdout.write(`\n`)
-            exit(100)
-          }
         }
       })
       return
@@ -55,9 +88,14 @@ export default async function (options) {
         writeStream = fse.createWriteStream(filePath, { highWaterMark: CHUNK_SIZE })
         total = parsed.size
         received = 0
+        pendingFiles += 1
       } else if (parsed.type === 'file-end') {
         await new Promise((res) => writeStream.end(res))
+        pendingFiles = Math.max(0, pendingFiles - 1)
+        maybeFinishTransfer.call(this)
       } else if (parsed.type === 'all-files-end') {
+        remoteFinished = true
+        maybeFinishTransfer.call(this)
       }
     } catch (err) {
       exit()

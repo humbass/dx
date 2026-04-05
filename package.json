@@ -9,7 +9,7 @@
     "dx": "src/dx.js"
   },
   "scripts": {
-    "rsync": "rsync -avz ./src root@54.251.70.115:/root/dxdev",
+    "rsync": "rsync -avz ./src ./package.json root@54.251.70.115:/root/dxdev",
     "preinstall": "node src/install.js"
   },
   "keywords": [
@@ -43,7 +43,7 @@
     "glob": "^11.0.3",
     "mitt": "^3.0.1",
     "readline": "^1.3.0",
-    "wrtc": "^0.4.7",
+    "werift": "^0.22.9",
     "ws": "^8.18.3"
   }
 }

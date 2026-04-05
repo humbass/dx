@@ -8,7 +8,6 @@
 
 ```bash
 # node version >= 20
-# node-pre-gyp required
 npm install --global dx 
 ```
 
@@ -58,5 +57,4 @@ dx receive --code 020-9255-896
 ## 注意事项
 
 Dx 服务器仅用于信令传递，不进行数据中转。 您的文件数据始终直接在两个终端之间传输。
-
 
