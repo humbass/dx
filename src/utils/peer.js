@@ -97,6 +97,8 @@ export class RTCPeerSender {
         if (parsed.type == 'sigint') {
           eventBus.emit('peer:exit', 'sigint')
           this.clear()
+        } else if (parsed.type === 'progress') {
+          eventBus.emit('peer:channel:message', parsed)
         } else if (parsed.type === 'all-files-received') {
           eventBus.emit('peer:exit', 'channel:all-files-received')
           this.clear()

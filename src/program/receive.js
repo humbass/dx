@@ -5,6 +5,8 @@ import { showProgress, randomCode, exit } from '../utils/tools.js'
 import eventBus from '../utils/events.js'
 
 const CHUNK_SIZE = globalThis.CHUNK_SIZE || 16 * 1024
+const PROGRESS_REPORT_INTERVAL_MS = 200
+const PROGRESS_REPORT_BYTES_STEP = 256 * 1024
 
 export default async function (options) {
   let code = options.code || process.env.DXcode
@@ -23,8 +25,12 @@ export default async function (options) {
   let remoteFinished = false
   let transferEnded = false
   let writeStream = null
+  let currentFileId = null
+  let lastProgressSentAt = 0
+  let lastProgressSentBytes = 0
 
   this.rtcPeer = new RTCPeerReceiver({ code })
+  globalThis.rtcPeer = this.rtcPeer
   eventBus.on('terminal:error', () => {
     if (transferEnded) return
     transferEnded = true
@@ -63,16 +69,41 @@ export default async function (options) {
     exit(100)
   }
 
+  function reportProgress(force = false) {
+    if (!currentFileId || total === 0) return
+    const now = Date.now()
+    const advancedBytes = received - lastProgressSentBytes
+    if (!force) {
+      if (now - lastProgressSentAt < PROGRESS_REPORT_INTERVAL_MS) return
+      if (advancedBytes < PROGRESS_REPORT_BYTES_STEP) return
+    }
+
+    this.rtcPeer.sendData({
+      type: 'progress',
+      fileId: currentFileId,
+      received,
+      total,
+    })
+    lastProgressSentAt = now
+    lastProgressSentBytes = received
+  }
+
   eventBus.on('peer:channel:message', async (data) => {
     if (Buffer.isBuffer(data) || data instanceof ArrayBuffer) {
       const buf = Buffer.isBuffer(data) ? data : Buffer.from(data)
       received += buf.length
+      if (!writeStream) {
+        console.error('Error: received file chunk before file metadata')
+        exit()
+        return
+      }
       writeStream.write(buf, (err) => {
         if (err) {
           console.error('Error writing to file:', err)
           exit()
         } else {
           showProgress(total, received)
+          reportProgress.call(this)
         }
       })
       return
@@ -86,10 +117,14 @@ export default async function (options) {
         const dir = path.dirname(filePath)
         if (dir !== '') fse.ensureDirSync(dir)
         writeStream = fse.createWriteStream(filePath, { highWaterMark: CHUNK_SIZE })
+        currentFileId = parsed.id || null
         total = parsed.size
         received = 0
+        lastProgressSentAt = 0
+        lastProgressSentBytes = 0
         pendingFiles += 1
       } else if (parsed.type === 'file-end') {
+        reportProgress.call(this, true)
         await new Promise((res) => writeStream.end(res))
         pendingFiles = Math.max(0, pendingFiles - 1)
         maybeFinishTransfer.call(this)
